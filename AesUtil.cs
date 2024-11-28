@@ -1,76 +1,115 @@
-using System.Text;
 using System.Security.Cryptography;
-using DotPulsar.Internal;
-using Newtonsoft.Json.Linq;
-using Newtonsoft.Json;
+using System.Text;
 using DotPulsar.Abstractions;
-using DotPulsar;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
-
-class AesUtil {
-
-    public static string DecryptMessage(IMessage message, string accessKey) {
-        message.Properties.TryGetValue("em", out var decrypt_model);
-        Console.WriteLine($"Received: {decrypt_model}");
-        string data = Encoding.UTF8.GetString(message.Data);
-        ArgumentNullException.ThrowIfNull(data, nameof(data));
-        JObject payloadJson = (JObject)JsonConvert.DeserializeObject(data);
-
-        if (decrypt_model == "aes_gcm") {
-            return DecryptByGcm(payloadJson["data"].ToString(),accessKey.Substring(8,16)).Replace("\f","").Replace("\r","").Replace("\n","").Replace("\t","").Replace("\v","").Replace("\b","");
-        } else {
-            return DecryptByEcb(payloadJson["data"].ToString(),accessKey.Substring(8,16)).Replace("\f","").Replace("\r","").Replace("\n","").Replace("\t","").Replace("\v","").Replace("\b","");
-        }
-    }
-
-    //decrypt_by_gcm
-    private static string DecryptByGcm(string decryptStr, string Key) {
-        byte[] cadenaBytes = Convert.FromBase64String(decryptStr);
-        byte[] claveBytes = Encoding.UTF8.GetBytes(Key);
-        // The first 12 bytes are the nonce
-        byte[] nonce = new byte[12];
-        Array.Copy(cadenaBytes, 0, nonce, 0, nonce.Length);
-
-        // The data to decrypt (excluding nonce and tag)
-        byte[] ciphertext = new byte[cadenaBytes.Length - nonce.Length - 16];
-        Array.Copy(cadenaBytes, nonce.Length, ciphertext, 0, ciphertext.Length);
-
-        // The last 16 bytes are the authentication tag
-        byte[] tag = new byte[16];
-        Array.Copy(cadenaBytes, cadenaBytes.Length - 16, tag, 0, tag.Length);
-
-        using (AesGcm aesGcm = new AesGcm(claveBytes))
+namespace TuyaPulsar
+{
+    /// <summary>
+    /// Provides encryption and decryption utilities for Tuya's message format
+    /// Supporting both AES-GCM and AES-ECB modes
+    /// </summary>
+    public static class AesUtil
+    {
+        /// <summary>
+        /// Decrypts a message based on its encryption model
+        /// </summary>
+        /// <param name="message">The Pulsar message to decrypt</param>
+        /// <param name="accessKey">The access key for decryption</param>
+        /// <returns>Decrypted message content</returns>
+        public static string DecryptMessage(IMessage message, string accessKey)
         {
-            byte[] plaintext = new byte[ciphertext.Length];
-            aesGcm.Decrypt(nonce, ciphertext, tag, plaintext);
-            return System.Text.Encoding.UTF8.GetString(plaintext);
+            // Extract encryption model from message properties
+            message.Properties.TryGetValue("em", out var encryptionModel);
+            
+            // Parse message data
+            var data = Encoding.UTF8.GetString(message.Data);
+            ArgumentNullException.ThrowIfNull(data, nameof(data));
+            
+            var payloadJson = (JObject?)JsonConvert.DeserializeObject(data);
+
+            var encryptedData = payloadJson?["data"]?.ToString();
+            if (encryptedData == null)
+                return string.Empty;
+            var decryptionKey = accessKey.Substring(8, 16);
+
+            // Decrypt based on encryption model
+            var decryptedData = encryptionModel == "aes_gcm" 
+                ? DecryptUsingGcm(encryptedData, decryptionKey)
+                : DecryptUsingEcb(encryptedData, decryptionKey);
+
+            // Clean up control characters
+            return CleanControlCharacters(decryptedData);
         }
-    }
 
-    //decrypt_by_aes
-    private static string DecryptByEcb(string decryptStr, string Key) {
-        try{
-            byte[] cadenaBytes = Convert.FromBase64String(decryptStr);
-            byte[] claveBytes = Encoding.UTF8.GetBytes(Key);
+        /// <summary>
+        /// Decrypts data using AES-GCM mode
+        /// </summary>
+        private static string DecryptUsingGcm(string encryptedData, string key)
+        {
+            var encryptedBytes = Convert.FromBase64String(encryptedData);
+            var keyBytes = Encoding.UTF8.GetBytes(key);
+            
+            // Extract components
+            var nonce = new byte[12];
+            Array.Copy(encryptedBytes, 0, nonce, 0, nonce.Length);
+            
+            var ciphertext = new byte[encryptedBytes.Length - nonce.Length - 16];
+            Array.Copy(encryptedBytes, nonce.Length, ciphertext, 0, ciphertext.Length);
+            
+            var tag = new byte[16];
+            Array.Copy(encryptedBytes, encryptedBytes.Length - 16, tag, 0, tag.Length);
 
-            RijndaelManaged rijndaelManaged = new RijndaelManaged();
-            rijndaelManaged.Mode = CipherMode.ECB;
-            rijndaelManaged.BlockSize = 128;
-            rijndaelManaged.Padding = PaddingMode.Zeros;
-            ICryptoTransform desencriptador;
-            desencriptador = rijndaelManaged.CreateDecryptor(claveBytes, rijndaelManaged.IV);
-            MemoryStream memStream = new MemoryStream(cadenaBytes);
-            CryptoStream cryptoStream;
-            cryptoStream = new CryptoStream(memStream, desencriptador, CryptoStreamMode.Read);
-            StreamReader streamReader = new StreamReader(cryptoStream);
-            string resultStr = streamReader.ReadToEnd();
+            // Decrypt
+            var plaintext = new byte[ciphertext.Length];
+            using var aesGcm = new AesGcm(keyBytes, 16);
+            aesGcm.Decrypt(nonce, ciphertext, tag, plaintext);
 
-            memStream.Close();
-            cryptoStream.Close();
-            return resultStr;
-        }catch (Exception ex){
-            Console.WriteLine(ex);
-            return null;
+            return Encoding.UTF8.GetString(plaintext);
+        }
+
+        /// <summary>
+        /// Decrypts data using AES-ECB mode
+        /// </summary>
+        private static string DecryptUsingEcb(string encryptedData, string key)
+        {
+            try
+            {
+                var encryptedBytes = Convert.FromBase64String(encryptedData);
+                var keyBytes = Encoding.UTF8.GetBytes(key);
+
+                using var aes = Aes.Create();
+                aes.Mode = CipherMode.ECB;
+                aes.BlockSize = 128;
+                aes.Padding = PaddingMode.Zeros;
+
+                using var decryptor = aes.CreateDecryptor(keyBytes, null);
+                using var memStream = new MemoryStream(encryptedBytes);
+                using var cryptoStream = new CryptoStream(memStream, decryptor, CryptoStreamMode.Read);
+                using var reader = new StreamReader(cryptoStream);
+                
+                return reader.ReadToEnd();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Decryption error: {ex.Message}");
+                return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Removes control characters from the decrypted string
+        /// </summary>
+        private static string CleanControlCharacters(string input)
+        {
+            return input
+                .Replace("\f", "")
+                .Replace("\r", "")
+                .Replace("\n", "")
+                .Replace("\t", "")
+                .Replace("\v", "")
+                .Replace("\b", "");
         }
     }
 }

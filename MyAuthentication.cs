@@ -1,57 +1,61 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-using DotPulsar.Abstractions;
 using System.Security.Cryptography;
 using System.Text;
+using DotPulsar.Abstractions;
 
-/// <summary>
-/// Token-based authentication implementation.
-/// </summary>
-public class MyAuthentication : IAuthentication
+namespace TuyaPulsar
 {
-    private readonly string _authData;
-
-    public MyAuthentication(string accessId, string accessKey)
-    {
-        _authData = "{\"username\":\"" + accessId +"\", \"password\":\"" + GenPwd(accessId, accessKey) + "\"}";
-    }
-
     /// <summary>
-    /// The authentication method name
+    /// Implements token-based authentication for Tuya's Pulsar service.
+    /// Handles secure credential generation and authentication data formatting.
     /// </summary>
-    public string AuthenticationMethodName => "auth1";
-
-    /// <summary>
-    /// Get the authentication data
-    /// </summary>
-    public async ValueTask<byte[]> GetAuthenticationData(CancellationToken cancellationToken)
+    public class MyAuthentication : IAuthentication
     {
-        await Task.Delay(1, cancellationToken);
+        private readonly string _authData;
 
-        return System.Text.Encoding.UTF8.GetBytes(_authData);
-    }
-
-
-    // pwd
-    private static string GenPwd(string accessId, string accessKey){
-        string md5HexKey = Md5(accessKey);
-        string mixStr = accessId + md5HexKey;
-        String md5MixStr = Md5(mixStr);
-        return md5MixStr.Substring(8,16);
-    }
-
-    // md5
-    private static string Md5(string md5Str) {
-        using (MD5 md5 = MD5.Create())
+        public MyAuthentication(string accessId, string accessKey)
         {
-            byte[] dataHash = md5.ComputeHash(Encoding.UTF8.GetBytes(md5Str));
-            StringBuilder sb = new StringBuilder();
-            foreach (byte b in dataHash)
+            _authData = BuildAuthData(accessId, accessKey);
+        }
+
+        /// <summary>
+        /// Gets the authentication method identifier
+        /// </summary>
+        public string AuthenticationMethodName => "auth1";
+
+        /// <summary>
+        /// Provides the authentication data for the Pulsar connection
+        /// </summary>
+        public async ValueTask<byte[]> GetAuthenticationData(CancellationToken cancellationToken)
+        {
+            await Task.Delay(1, cancellationToken);
+            return Encoding.UTF8.GetBytes(_authData);
+        }
+
+        private static string BuildAuthData(string accessId, string accessKey)
+        {
+            string password = GeneratePassword(accessId, accessKey);
+            return $"{{\"username\":\"{accessId}\", \"password\":\"{password}\"}}";
+        }
+
+        private static string GeneratePassword(string accessId, string accessKey)
+        {
+            string md5Key = ComputeMd5Hash(accessKey);
+            string combinedString = accessId + md5Key;
+            string finalHash = ComputeMd5Hash(combinedString);
+            return finalHash.Substring(8, 16);
+        }
+
+        private static string ComputeMd5Hash(string input)
+        {
+            using var md5 = MD5.Create();
+            byte[] hashBytes = md5.ComputeHash(Encoding.UTF8.GetBytes(input));
+            
+            StringBuilder builder = new();
+            foreach (byte b in hashBytes)
             {
-                sb.Append(b.ToString("x2").ToLower());
+                builder.Append(b.ToString("x2").ToLower());
             }
-            return sb.ToString();
+            return builder.ToString();
         }
     }
 }

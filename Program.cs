@@ -1,61 +1,82 @@
 using DotPulsar;
 using DotPulsar.Abstractions;
 using DotPulsar.Extensions;
-using DotPulsar.Internal;
-using System.Security.Cryptography;
-using System.Text;
 
-
-// pulsar server url
-const string CN_SERVER_URL = "pulsar+ssl://mqe.tuyacn.com:7285/";
-const string US_SERVER_URL = "pulsar+ssl://mqe.tuyaus.com:7285/";
-const string EU_SERVER_URL = "pulsar+ssl://mqe.tuyaeu.com:7285/";
-const string IND_SERVER_URL = "pulsar+ssl://mqe.tuyain.com:7285/";
-// env
-const string MQ_ENV_PROD = "event";
-const string MQ_ENV_TEST = "event-test";
-
-// accessId, accessKey，serverUrl，MQ_ENV
-const string ACCESS_ID = "";
-const string ACCESS_KEY = "";
-const string PULSAR_SERVER_URL = CN_SERVER_URL;
-const string MQ_ENV= MQ_ENV_PROD;
-
-const string topic = "persistent://" + ACCESS_ID + "/out/" + MQ_ENV;
-const string subscrition = ACCESS_ID + "-sub";
-
-IAuthentication auth = new MyAuthentication(ACCESS_ID, ACCESS_KEY);
-
-// connecting to pulsar://localhost:6650
-await using var client = PulsarClient.Builder()
-    .ServiceUrl(new System.Uri(PULSAR_SERVER_URL))
-    .Authentication(auth)
-    .Build();
-
-
-// consume messages
-await using var consumer = client.NewConsumer()
-    .SubscriptionName(subscrition)
-    .Topic(topic)
-    .SubscriptionType(SubscriptionType.Failover)
-    .Create();
-
-await foreach (var message in consumer.Messages())
+namespace TuyaPulsar
 {
-    string messageId = getMessageId(message.MessageId);
-    Console.WriteLine($"Received: {messageId}");
-    string decryptData = AesUtil.DecryptMessage(message, ACCESS_KEY);
-    Console.WriteLine($"Received: {messageId} DecryptMessage: {decryptData}");
-    handleMessage(message, messageId, decryptData);
-    await consumer.Acknowledge(message);
-}
+    public class Program
+    {
+        // Server URLs for different regions
+        private const string CN_SERVER_URL = "pulsar+ssl://mqe.tuyacn.com:7285/";
+        private const string US_SERVER_URL = "pulsar+ssl://mqe.tuyaus.com:7285/";
+        private const string EU_SERVER_URL = "pulsar+ssl://mqe.tuyaeu.com:7285/";
+        private const string IND_SERVER_URL = "pulsar+ssl://mqe.tuyain.com:7285/";
 
-string getMessageId(MessageId messageId) {
-    return $"{messageId.LedgerId}:{messageId.EntryId}:{messageId.Partition}:{messageId.BatchIndex}";
-}
+        // Environment settings
+        private const string MQ_ENV_PROD = "event";
+        private const string MQ_ENV_TEST = "event-test";
 
-void handleMessage(IMessage message, string messageId, string decryptData) {
-    Console.WriteLine($"handle start : {messageId}");
-    // TODO handle message
-    Console.WriteLine($"handle finish : {messageId}");
+        // Configuration parameters
+        private const string ACCESS_ID = "";      // Your Tuya Access ID
+        private const string ACCESS_KEY = "";     // Your Tuya Access Key
+        private const string PULSAR_SERVER_URL = CN_SERVER_URL;
+        private const string MQ_ENV = MQ_ENV_PROD;
+
+        public static async Task Main()
+        {
+            // Configure topic and subscription
+            string topic = $"persistent://{ACCESS_ID}/out/{MQ_ENV}";
+            string subscription = $"{ACCESS_ID}-sub";
+
+            // Create authentication instance
+            IAuthentication auth = new MyAuthentication(ACCESS_ID, ACCESS_KEY);
+
+            // Initialize Pulsar client
+            await using var client = PulsarClient.Builder()
+                .ServiceUrl(new Uri(PULSAR_SERVER_URL))
+                .Authentication(auth)
+                .Build();
+
+            // Create consumer
+            await using var consumer = client.NewConsumer()
+                .SubscriptionName(subscription)
+                .Topic(topic)
+                .SubscriptionType(SubscriptionType.Failover)
+                .Create();
+
+            // Process messages
+            await foreach (var message in consumer.Messages())
+            {
+                try
+                {
+                    string messageId = GetMessageId(message.MessageId);
+                    Console.WriteLine($"Received message: {messageId}");
+
+                    string decryptedData = AesUtil.DecryptMessage(message, ACCESS_KEY);
+                    Console.WriteLine($"Decrypted message {messageId}: {decryptedData}");
+
+                    await HandleMessage(message, messageId, decryptedData);
+                    await consumer.Acknowledge(message);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error processing message: {ex.Message}");
+                    // Implement your error handling strategy here
+                }
+            }
+        }
+
+        private static string GetMessageId(MessageId messageId)
+        {
+            return $"{messageId.LedgerId}:{messageId.EntryId}:{messageId.Partition}:{messageId.BatchIndex}";
+        }
+
+        private static async Task HandleMessage(IMessage message, string messageId, string decryptedData)
+        {
+            Console.WriteLine($"Processing message: {messageId}");
+            // TODO: Implement your message handling logic here
+            await Task.Delay(1); // Placeholder for async operations
+            Console.WriteLine($"Finished processing message: {messageId}");
+        }
+    }
 }
