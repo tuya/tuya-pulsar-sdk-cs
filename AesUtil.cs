@@ -11,7 +11,7 @@ class AesUtil {
 
     public static string DecryptMessage(IMessage message, string accessKey) {
         message.Properties.TryGetValue("em", out var decrypt_model);
-        Console.WriteLine($"Received: {decrypt_model}");
+//        Console.WriteLine($"Received: {decrypt_model}");
         string data = Encoding.UTF8.GetString(message.Data);
         ArgumentNullException.ThrowIfNull(data, nameof(data));
         JObject payloadJson = (JObject)JsonConvert.DeserializeObject(data);

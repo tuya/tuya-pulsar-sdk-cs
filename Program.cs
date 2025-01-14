@@ -43,11 +43,11 @@ await using var consumer = client.NewConsumer()
 await foreach (var message in consumer.Messages())
 {
     string messageId = getMessageId(message.MessageId);
-    Console.WriteLine($"Received: {messageId}");
+    Console.WriteLine($"Received: {messageId} EncryptMessage: {Encoding.UTF8.GetString(message.Data)}");
     string decryptData = AesUtil.DecryptMessage(message, ACCESS_KEY);
     Console.WriteLine($"Received: {messageId} DecryptMessage: {decryptData}");
     handleMessage(message, messageId, decryptData);
-    await consumer.Acknowledge(message);
+    await consumer.AcknowledgeCumulative(message);
 }
 
 string getMessageId(MessageId messageId) {
