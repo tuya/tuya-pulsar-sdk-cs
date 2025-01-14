@@ -1,4 +1,4 @@
-# tuya-pulsar-sdk-cs
+# tuya-pulsar-sdk-dotnet
 # c# pulsar consumer client sdk example
 # Support net framework versions
 ```
